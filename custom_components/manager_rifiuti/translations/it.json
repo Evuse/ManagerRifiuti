@@ -9,7 +9,12 @@
         "notify_services": "Servizi notify (uno per riga)",
         "notify_time": "Orario prima notifica (HH:MM:SS)",
         "reminder_time": "Orario secondo promemoria, facoltativo",
-        "enabled_waste": "Codici abilitati separati da virgola"
+        "enabled_waste": "Codici abilitati separati da virgola",
+        "notify_title": "Titolo prima notifica",
+        "notify_message": "Messaggio prima notifica",
+        "reminder_title": "Titolo secondo promemoria",
+        "reminder_message": "Messaggio secondo promemoria",
+        "action_title": "Testo del pulsante nella notifica"
       }
     }}
   }
