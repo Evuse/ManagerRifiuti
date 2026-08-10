@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -486,13 +487,21 @@ class MainWindow(QMainWindow):
         import_backup.clicked.connect(self.import_json)
         open_backups = QPushButton("Apri cartella backup")
         open_backups.clicked.connect(self.open_backup_folder)
+        self.clear_remote = QPushButton("Azzera Home Assistant")
+        self.clear_remote.setObjectName("Danger")
+        self.clear_remote.setToolTip(
+            "Elimina soltanto le raccolte importate dall'integrazione Manager Rifiuti"
+        )
+        self.clear_remote.clicked.connect(self.clear_home_assistant)
         customize = QPushButton("Personalizza")
         customize.clicked.connect(self.open_settings)
-        utilities = QHBoxLayout()
-        utilities.addWidget(import_backup)
-        utilities.addWidget(open_backups)
-        utilities.addStretch()
-        utilities.addWidget(customize)
+        utilities = QGridLayout()
+        utilities.setColumnStretch(0, 1)
+        utilities.setColumnStretch(1, 1)
+        utilities.addWidget(import_backup, 0, 0)
+        utilities.addWidget(open_backups, 0, 1)
+        utilities.addWidget(self.clear_remote, 1, 0)
+        utilities.addWidget(customize, 1, 1)
 
         connection = QFrame()
         connection.setObjectName("Card")
@@ -524,13 +533,9 @@ class MainWindow(QMainWindow):
         self.send.setObjectName("Primary")
         self.send.setEnabled(False)
         self.send.clicked.connect(self.send_calendar)
-        clear_remote = QPushButton("Azzera calendario su Home Assistant")
-        clear_remote.setObjectName("Danger")
-        clear_remote.clicked.connect(self.clear_home_assistant)
         connection_layout.addWidget(connection_title)
         connection_layout.addLayout(form)
         connection_layout.addWidget(self.send)
-        connection_layout.addWidget(clear_remote)
 
         actions = QHBoxLayout()
         actions.addWidget(self.analyze, 1)
@@ -550,7 +555,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(connection)
         widget = QWidget()
         widget.setLayout(layout)
-        self.setCentralWidget(widget)
+        scroll = QScrollArea()
+        scroll.setObjectName("MainScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidget(widget)
+        self.setCentralWidget(scroll)
 
         file_menu = self.menuBar().addMenu("File")
         export_action = QAction("Esporta un altro backup JSON…", self)
