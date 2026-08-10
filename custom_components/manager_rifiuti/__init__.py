@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from homeassistant.components import webhook
 from homeassistant.const import CONF_WEBHOOK_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_time_change
-from homeassistant.components import webhook
 
 from .const import (
     CONF_ENABLED_WASTE,
