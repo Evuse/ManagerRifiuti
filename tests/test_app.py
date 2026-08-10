@@ -48,3 +48,4 @@ def test_disabling_a_type_excludes_only_its_rows(qtbot):
 
     assert dialog.table.item(1, 2).checkState() == Qt.Checked
     assert [(item.day, item.waste) for item in dialog.collections()] == [(date(2026, 7, 3), "P")]
+
