@@ -4,7 +4,7 @@ from datetime import date
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import QComboBox
 
-from manager_rifiuti.app import ReviewDialog, SettingsDialog, read_backup, write_backup
+from manager_rifiuti.app import MainWindow, ReviewDialog, SettingsDialog, read_backup, write_backup
 from manager_rifiuti.models import WASTE_NAMES, Collection
 from manager_rifiuti.recognizer import RecognitionResult
 
@@ -110,3 +110,11 @@ def test_disabling_remember_removes_stored_id(qtbot, tmp_path):
 
     assert not settings.value("homeassistant/remember_webhook", True, type=bool)
     assert settings.value("homeassistant/webhook_id") is None
+
+
+def test_main_window_exposes_home_assistant_reset_button(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.clear_remote.text() == "Azzera Home Assistant"
+    assert window.clear_remote.objectName() == "Danger"
