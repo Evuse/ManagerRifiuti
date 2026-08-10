@@ -1,57 +1,62 @@
 # Manager Rifiuti
 
-Applicazione desktop locale per leggere il calendario semestrale del Comune,
-revisionare le raccolte riconosciute e importarle in Home Assistant. Nessuna
-immagine lascia il computer: OpenCV e RapidOCR lavorano offline.
+Applicazione desktop locale per leggere un calendario semestrale dei rifiuti,
+controllare le raccolte riconosciute e importarle in Home Assistant. Le immagini
+non lasciano il computer: OpenCV e RapidOCR lavorano offline.
 
 ## Da dove iniziare
 
-La guida completa per un Mac Intel e Home Assistant OS è disponibile in
-[`docs/GUIDA_MAC_INTEL.md`](docs/GUIDA_MAC_INTEL.md). Seguila nell'ordine:
-download dell'app, installazione della custom integration, configurazione delle
-notifiche, importazione della foto e verifica finale.
+- Windows 11: segui [`docs/GUIDA_WINDOWS_11.md`](docs/GUIDA_WINDOWS_11.md).
+- macOS Intel: la guida è in [`docs/GUIDA_MAC_INTEL.md`](docs/GUIDA_MAC_INTEL.md).
+
+## Funzioni dell'app
+
+- trascinamento di una o due fotografie;
+- correzione prospettica e riconoscimento locale dei simboli;
+- revisione obbligatoria con nomi completi dei rifiuti;
+- selezione delle tipologie da importare e modifica delle singole righe;
+- tema chiaro o scuro e impostazioni persistenti;
+- backup JSON automatico dopo ogni revisione;
+- invio diretto a Home Assistant mediante ID di importazione protetto.
 
 ## Avvio per sviluppatori
 
-```bash
-python -m venv .venv
-. .venv/bin/activate                    # Windows: .venv\Scripts\activate
-pip install -e '.[ocr,test]'
-python -m manager_rifiuti
-```
+Su Windows è consigliato Python 3.12:
 
-Il flusso guidato accetta uno o due file, corregge orientamento e prospettiva,
-mostra una revisione obbligatoria, richiede la conferma dell'anno e infine
-invia il JSON al webhook della custom integration.
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e ".[ocr,test]"
+.\.venv\Scripts\python.exe -m manager_rifiuti
+```
 
 ## Home Assistant
 
-1. Copiare `custom_components/manager_rifiuti` in `/config/custom_components/`.
-2. Riavviare Home Assistant.
-3. Aggiungere **Manager Rifiuti** da *Impostazioni → Dispositivi e servizi*.
-4. Copiare il valore del sensore **ID importazione Manager Rifiuti** nell'app desktop.
-5. Nelle opzioni scegliere orari e servizi `notify.mobile_app_*` (uno per riga).
+1. Copia `custom_components/manager_rifiuti` in `/config/custom_components/`.
+2. Riavvia Home Assistant.
+3. Aggiungi **Manager Rifiuti** da *Impostazioni → Dispositivi e servizi*.
+4. Copia nell'app il valore del sensore **ID importazione Manager Rifiuti**.
+5. Nelle opzioni scegli orari e servizi `notify.mobile_app_*`, uno per riga.
 
-L'integrazione crea `calendar.raccolta_rifiuti`, due sensori e un pulsante per
-segnare come eseguite tutte le raccolte di domani. Ogni notifica contiene anche
-un'azione dedicata; le raccolte multiple generano notifiche separate.
+L'integrazione crea un calendario, i sensori delle raccolte di oggi e domani e
+un pulsante per indicare che i rifiuti sono già stati esposti.
 
-## Build standalone
+## Build portabile Windows
 
-Le build sono prodotte su macchine native perché PyInstaller non effettua
-cross-compilation:
-
-```bash
-pip install -e '.[build]'
-pyinstaller manager-rifiuti.spec --clean --noconfirm
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[build]"
+.\.venv\Scripts\python.exe -m PyInstaller manager-rifiuti.spec --clean --noconfirm
 ```
 
-La workflow GitHub Actions genera ZIP portabili per Windows x64, macOS Intel e
-macOS Apple Silicon. Al primo avvio non è richiesta alcuna installazione.
+L'applicazione si trova in `dist/ManagerRifiuti/ManagerRifiuti.exe`. La cartella
+`ManagerRifiuti` è portabile e contiene tutte le dipendenze: non copiare il solo
+file `.exe`. Python non è necessario sul computer che esegue il pacchetto.
+
+La workflow **Build portatile** può inoltre produrre gli ZIP per Windows x64,
+macOS Intel, macOS Apple Silicon e il pacchetto Home Assistant.
 
 ## Limiti del riconoscimento
 
-Il lettore è intenzionalmente specializzato per la griglia a sei mesi mostrata
-nel calendario fornito. Evidenzia le celle incerte e non consente l'esportazione
-prima della revisione. Fotografie nitide, senza parti tagliate e con il foglio
-interamente visibile danno il risultato migliore.
+Il lettore è specializzato per la griglia a sei mesi del calendario supportato.
+La revisione resta obbligatoria. Fotografie nitide, senza parti tagliate, con il
+foglio interamente visibile e ripreso frontalmente danno il risultato migliore.
