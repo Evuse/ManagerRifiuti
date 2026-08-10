@@ -30,6 +30,7 @@ TOKENS = ("TS", "O", "I", "V", "M", "P", "C", "S")
 TS_PATTERN = re.compile(r"(?<![A-Z])T[\W_]*[S5](?![A-Z])", re.IGNORECASE)
 DAY_PREFIX = re.compile(r"^(\d{1,2})")
 DAY_LABEL = re.compile(r"^\d{1,2}(?:LU|MA|ME|GI|VE|SA|D[O0])$", re.IGNORECASE)
+WEEKDAY_LABEL = re.compile(r"^(?:LU|MA|ME|GI|VE|SA|D[O0])$", re.IGNORECASE)
 
 
 @dataclass
@@ -260,6 +261,42 @@ def _month_hits(words: list[tuple[str, list]]) -> list[tuple[int, float, float]]
     return sorted(((month, x, y) for month, (x, y) in hits.items()), key=lambda item: item[1])
 
 
+def _complete_semester_hits(
+    hits: list[tuple[int, float, float]], width: int
+) -> list[tuple[int, float, float]]:
+    """Reconstruct a clipped semester header from at least four visible months."""
+    if len(hits) < 4:
+        return hits
+    detected = {month for month, _x, _y in hits}
+    semesters = (set(range(1, 7)), set(range(7, 13)))
+    semester = max(semesters, key=lambda months: len(months & detected))
+    if len(semester & detected) < 4 or not detected <= semester:
+        return hits
+
+    months = np.array([month for month, _x, _y in hits], dtype=float)
+    design = np.column_stack((np.ones(len(months)), months))
+    x_fit = np.linalg.lstsq(design, np.array([x for _month, x, _y in hits]), rcond=None)[0]
+    y_fit = np.linalg.lstsq(design, np.array([y for _month, _x, y in hits]), rcond=None)[0]
+    completed = list(hits)
+    for month in sorted(semester - detected):
+        if month < min(detected):
+            first, second = sorted(hits, key=lambda item: item[0])[:2]
+            steps = first[0] - month
+            x = first[1] - steps * (second[1] - first[1])
+            y = first[2] - steps * (second[2] - first[2])
+        elif month > max(detected):
+            first, second = sorted(hits, key=lambda item: item[0])[-2:]
+            steps = month - second[0]
+            x = second[1] + steps * (second[1] - first[1])
+            y = second[2] + steps * (second[2] - first[2])
+        else:
+            x = float(x_fit @ np.array([1.0, month]))
+            y = float(y_fit @ np.array([1.0, month]))
+        if -width * 0.05 <= x <= width * 1.05:
+            completed.append((month, x, y))
+    return sorted(completed, key=lambda item: item[1])
+
+
 def _fit_row_curve(
     words: list[tuple[str, list]], left: float, right: float, header_y: float, height: int
 ) -> np.ndarray:
@@ -299,16 +336,35 @@ def _fit_label_edges(
     words: list[tuple[str, list]], left: float, right: float, header_y: float, height: int
 ) -> tuple[np.ndarray, np.ndarray]:
     labels: list[tuple[float, float, float]] = []
+    day_parts: list[tuple[float, float, float]] = []
+    weekday_parts: list[tuple[float, float, float]] = []
     for text, box in words:
         x, y = _box_center(box)
+        normalized = text.upper().replace("O", "0").strip()
         if (
             left <= x < right
             and header_y + 40 < y < height * 0.85
-            and DAY_LABEL.match(text.upper())
         ):
-            labels.append(
-                (y, min(point[0] for point in box), max(point[0] for point in box))
-            )
+            box_left = min(point[0] for point in box)
+            box_right = max(point[0] for point in box)
+            if DAY_LABEL.match(normalized):
+                labels.append((y, box_left, box_right))
+            elif normalized.isdigit() and 1 <= int(normalized) <= 31:
+                day_parts.append((y, box_left, box_right))
+            elif WEEKDAY_LABEL.match(normalized):
+                weekday_parts.append((y, box_left, box_right))
+
+    row_tolerance = height / 100
+    for y, day_left, day_right in day_parts:
+        weekdays = [
+            (weekday_y, weekday_right)
+            for weekday_y, weekday_left, weekday_right in weekday_parts
+            if abs(weekday_y - y) <= row_tolerance
+            and day_right <= weekday_left < left + (right - left) * 0.75
+        ]
+        if weekdays:
+            _weekday_y, weekday_right = min(weekdays, key=lambda item: abs(item[0] - y))
+            labels.append((y, day_left, weekday_right))
     if len(labels) < 4:
         return (
             np.array([left + (right - left) * 0.08, 0.0]),
@@ -408,7 +464,7 @@ class CalendarRecognizer:
         all_text = " ".join(text for text, _ in words).lower()
         years = [year for year in re.findall(r"\b20\d{2}\b", all_text) if int(year) >= 2020]
         result.detected_year = int(years[0]) if years else fallback_year
-        month_hits = _month_hits(words)
+        month_hits = _complete_semester_hits(_month_hits(words), image.shape[1])
         result.months = [month for month, _x, _y in month_hits]
         if not result.months:
             result.warnings.append("Mesi non riconosciuti: selezionarli nella revisione.")
