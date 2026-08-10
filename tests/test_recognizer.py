@@ -6,6 +6,8 @@ import numpy as np
 from manager_rifiuti.recognizer import (
     CalendarRecognizer,
     _classify_icon,
+    _complete_semester_hits,
+    _fit_label_edges,
     extract_waste_tokens,
     rectify,
 )
@@ -81,4 +83,33 @@ def test_visual_icon_colours_distinguish_requested_and_commercial_types():
     assert _classify_icon(100, 101, 138) == "M"
     assert _classify_icon(20, 70, 163) is None  # CC
     assert _classify_icon(97, 89, 96) is None  # MC
+
+
+def test_missing_first_semester_header_is_reconstructed_from_neighbours():
+    hits = [(8, 610.0, 138.0), (9, 1150.0, 142.0), (10, 1600.0, 148.0), (11, 2100.0, 152.0)]
+
+    completed = _complete_semester_hits(hits, 3024)
+
+    assert [month for month, _x, _y in completed] == [7, 8, 9, 10, 11, 12]
+    assert completed[0][1] == 70.0
+
+
+def test_split_day_and_weekday_boxes_define_the_icon_margin():
+    def box(left, top, right, bottom):
+        return [[left, top], [right, top], [right, bottom], [left, bottom]]
+
+    words = []
+    for day in range(1, 7):
+        y = 100 + day * 50
+        words.extend(
+            [
+                (str(day), box(410, y - 10, 440, y + 10)),
+                ("LU", box(455, y - 10, 495, y + 10)),
+            ]
+        )
+
+    label_start, label_edge = _fit_label_edges(words, 380, 880, 50, 1000)
+
+    assert abs(label_start[0] - 410) < 1
+    assert abs(label_edge[0] - 495) < 1
 
