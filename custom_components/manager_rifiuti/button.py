@@ -11,6 +11,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         [
             DoneButton(hass.data[DOMAIN][entry.entry_id]),
             TestNotificationButton(hass, entry.entry_id),
+            TestReminderButton(hass, entry.entry_id),
         ]
     )
 
@@ -39,3 +40,17 @@ class TestNotificationButton(ButtonEntity):
     async def async_press(self):
         notify = self.hass.data[DOMAIN][f"{self.entry_id}_notify"]
         await notify(dt_util.now(), test=True)
+
+
+class TestReminderButton(ButtonEntity):
+    _attr_name = "Invia promemoria di prova"
+    _attr_unique_id = "manager_rifiuti_test_reminder"
+    _attr_icon = "mdi:bell-badge-outline"
+
+    def __init__(self, hass, entry_id):
+        self.hass = hass
+        self.entry_id = entry_id
+
+    async def async_press(self):
+        notify = self.hass.data[DOMAIN][f"{self.entry_id}_notify"]
+        await notify(dt_util.now(), reminder=True, test=True)
