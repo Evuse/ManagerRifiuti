@@ -1,9 +1,10 @@
+import json
 from datetime import date
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox
 
-from manager_rifiuti.app import ReviewDialog
+from manager_rifiuti.app import ReviewDialog, write_backup
 from manager_rifiuti.models import WASTE_NAMES, Collection
 from manager_rifiuti.recognizer import RecognitionResult
 
@@ -61,3 +62,21 @@ def test_type_change_targets_current_row_after_an_earlier_row_is_removed(qtbot):
 
     assert dialog.table.item(0, 2).checkState() == Qt.Unchecked
 
+
+def test_backup_contains_all_reviewed_collections(tmp_path):
+    path = tmp_path / "backup" / "raccolte-2026.json"
+    collections = [
+        Collection(date(2026, 8, 10), "O"),
+        Collection(date(2026, 8, 10), "I"),
+        Collection(date(2026, 8, 10), "TS"),
+    ]
+
+    write_backup(path, 2026, collections)
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["year"] == 2026
+    assert [(item["day"], item["waste"]) for item in payload["collections"]] == [
+        ("2026-08-10", "O"),
+        ("2026-08-10", "I"),
+        ("2026-08-10", "TS"),
+    ]
