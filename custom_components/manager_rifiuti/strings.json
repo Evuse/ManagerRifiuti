@@ -1,0 +1,16 @@
+{
+  "config": {
+    "step": {"user": {"title": "Manager Rifiuti", "description": "Configura il calendario locale. {info}"}}
+  },
+  "options": {
+    "step": {"init": {
+      "title": "Notifiche",
+      "data": {
+        "notify_services": "Servizi notify (uno per riga)",
+        "notify_time": "Orario prima notifica (HH:MM:SS)",
+        "reminder_time": "Orario secondo promemoria, facoltativo",
+        "enabled_waste": "Codici abilitati separati da virgola"
+      }
+    }}
+  }
+}
