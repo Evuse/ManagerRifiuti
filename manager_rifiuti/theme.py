@@ -29,13 +29,32 @@ PALETTES = {
     },
 }
 
+ACCENTS = {
+    "Verde": ("#159a68", "#0f8257", "#dff5ea", "#32c88a", "#54d79f", "#173e2e"),
+    "Blu": ("#2476d2", "#185faa", "#e1efff", "#55a4ff", "#7ab8ff", "#173453"),
+    "Viola": ("#7857c7", "#6242ae", "#eee8ff", "#a88aff", "#bea7ff", "#352851"),
+    "Arancio": ("#d66a1f", "#b65313", "#fff0df", "#ff984f", "#ffad74", "#4d2b19"),
+}
 
-def apply_theme(app: QApplication, theme: str) -> None:
+
+def apply_theme(app: QApplication, theme: str, accent: str = "Verde", font_size: int = 14) -> None:
     colors = PALETTES.get(theme, PALETTES["Chiaro"])
+    accent_values = ACCENTS.get(accent, ACCENTS["Verde"])
+    if theme == "Scuro":
+        accent_color, accent_hover, accent_soft = accent_values[3:]
+    else:
+        accent_color, accent_hover, accent_soft = accent_values[:3]
+    colors = {
+        **colors,
+        "accent": accent_color,
+        "accent_hover": accent_hover,
+        "accent_soft": accent_soft,
+    }
+    font_size = max(12, min(font_size, 18))
     app.setStyle("Fusion")
     app.setStyleSheet(
         f"""
-        * {{ font-family: "Segoe UI", sans-serif; font-size: 14px; }}
+        * {{ font-family: "Segoe UI", sans-serif; font-size: {font_size}px; }}
         QMainWindow, QDialog {{ background: {colors["bg"]}; color: {colors["text"]}; }}
         QWidget {{ color: {colors["text"]}; }}
         QMenuBar, QMenu {{ background: {colors["surface"]}; border: none; }}
@@ -68,6 +87,7 @@ def apply_theme(app: QApplication, theme: str) -> None:
             color: white; background: {colors["accent"]}; border-color: {colors["accent"]};
         }}
         QPushButton#Primary:hover {{ background: {colors["accent_hover"]}; }}
+        QPushButton#Danger {{ color: {colors["danger"]}; border-color: {colors["danger"]}; }}
         QLineEdit, QSpinBox, QComboBox {{
             background: {colors["surface"]}; border: 1px solid {colors["border"]};
             border-radius: 8px; padding: 8px;
