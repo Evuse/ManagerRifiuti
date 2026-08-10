@@ -243,6 +243,16 @@ def _visual_waste_tokens(cell: np.ndarray) -> set[str] | None:
     return tokens
 
 
+def _combine_cell_tokens(cell_text: str, visual_tokens: set[str] | None) -> set[str]:
+    text_tokens = extract_waste_tokens(cell_text)
+    tokens = set(text_tokens if visual_tokens is None else visual_tokens)
+    # On this calendar P is always the pale second icon of the O+P pair. The
+    # detector sees P consistently even when shadows hide the adjacent brown O.
+    if "P" in text_tokens or "P" in tokens:
+        tokens.update(("O", "P"))
+    return tokens
+
+
 def _box_center(box: list) -> tuple[float, float]:
     return (
         sum(point[0] for point in box) / len(box),
@@ -507,11 +517,7 @@ class CalendarRecognizer:
                     if x0 <= _box_center(box)[0] < x1 and y0 <= _box_center(box)[1] < y1
                 )
                 visual_tokens = _visual_waste_tokens(cell)
-                tokens = (
-                    visual_tokens
-                    if visual_tokens is not None
-                    else extract_waste_tokens(cell_text)
-                )
+                tokens = _combine_cell_tokens(cell_text, visual_tokens)
                 for token in tokens:
                     result.collections.append(
                         Collection(date(working_year, grid.month, day), token, 0.82)
