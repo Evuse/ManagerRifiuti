@@ -50,7 +50,9 @@ automaticamente un JSON in `Documenti\ManagerRifiuti\backup`.
 
 ## 4. Reimportare in Home Assistant
 
-Inserisci l'indirizzo di Home Assistant e l'ID importazione, quindi premi
+Apri **Personalizza → Impostazioni**, inserisci indirizzo e ID importazione e
+attiva **Salva l'ID su questo PC** se vuoi evitare di reinserirlo. L'ID viene
+salvato nelle impostazioni locali di Windows e non è cifrato. Quindi premi
 **Invia 149 raccolte a Home Assistant**. Una nuova importazione sostituisce i
 dati precedenti; non si somma a essi.
 
