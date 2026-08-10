@@ -35,4 +35,3 @@ if platform.system() == "Darwin":
             "NSHighResolutionCapable": True,
         },
     )
-
