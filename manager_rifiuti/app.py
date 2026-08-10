@@ -136,7 +136,7 @@ class ReviewDialog(QDialog):
         selected_index = waste_selector.findData(waste)
         waste_selector.setCurrentIndex(max(selected_index, 0))
         waste_selector.currentIndexChanged.connect(
-            lambda _index, current_row=row: self.sync_row_enabled(current_row)
+            lambda _index, selector=waste_selector: self.sync_selector_enabled(selector)
         )
         self.table.setCellWidget(row, 1, waste_selector)
         checked = QTableWidgetItem("Sì")
@@ -157,6 +157,12 @@ class ReviewDialog(QDialog):
             include.setCheckState(
                 Qt.Checked if self.waste_checks[self.row_waste(row)].isChecked() else Qt.Unchecked
             )
+
+    def sync_selector_enabled(self, selector: QComboBox) -> None:
+        for row in range(self.table.rowCount()):
+            if self.table.cellWidget(row, 1) is selector:
+                self.sync_row_enabled(row)
+                return
 
     def set_waste_enabled(self, waste: str, enabled: bool) -> None:
         for row in range(self.table.rowCount()):
