@@ -374,17 +374,29 @@ class CalendarRecognizer:
 
     def __init__(self) -> None:
         try:
-            from rapidocr_onnxruntime import RapidOCR
+            from rapidocr import RapidOCR
         except ImportError:
-            self.ocr = None
+            try:
+                from rapidocr_onnxruntime import RapidOCR
+            except ImportError:
+                self.ocr = None
+            else:
+                self.ocr = RapidOCR()
         else:
             self.ocr = RapidOCR()
 
     def _text(self, image: np.ndarray) -> list[tuple[str, list]]:
         if self.ocr is None:
             return []
-        output, _ = self.ocr(image)
-        return [(str(item[1]).strip(), item[0]) for item in (output or [])]
+        output = self.ocr(image)
+        if hasattr(output, "txts"):
+            boxes = getattr(output, "boxes", None)
+            texts = getattr(output, "txts", None)
+            if boxes is None or texts is None:
+                return []
+            return [(str(text).strip(), box.tolist()) for text, box in zip(texts, boxes)]
+        legacy_output, _elapsed = output
+        return [(str(item[1]).strip(), item[0]) for item in (legacy_output or [])]
 
     def recognize(self, path: str | Path, fallback_year: int | None = None) -> RecognitionResult:
         image = cv2.imread(str(path))
