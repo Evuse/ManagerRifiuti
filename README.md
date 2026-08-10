@@ -15,7 +15,9 @@ non lasciano il computer: OpenCV e RapidOCR lavorano offline.
 - correzione prospettica e riconoscimento locale dei simboli;
 - revisione obbligatoria con nomi completi dei rifiuti;
 - selezione delle tipologie da importare e modifica delle singole righe;
-- tema chiaro o scuro e impostazioni persistenti;
+- tema chiaro o scuro, colori e dimensione del testo personalizzabili;
+- salvataggio opzionale dell'indirizzo e dell'ID di Home Assistant;
+- caricamento dei backup e azzeramento guidato del calendario remoto;
 - backup JSON automatico dopo ogni revisione;
 - invio diretto a Home Assistant mediante ID di importazione protetto.
 
