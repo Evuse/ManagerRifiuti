@@ -6,7 +6,7 @@ from datetime import date
 WASTE_NAMES = {
     "O": "Organico",
     "I": "Indifferenziata",
-    "TS": "Pannolini",
+    "TS": "Tessili sanitari (pannolini)",
     "V": "Vetro",
     "M": "Metallo",
     "P": "Plastica",
@@ -25,3 +25,4 @@ class Collection:
         data = asdict(self)
         data["day"] = self.day.isoformat()
         return data
+
