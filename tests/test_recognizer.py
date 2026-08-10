@@ -118,4 +118,3 @@ def test_split_day_and_weekday_boxes_define_the_icon_margin():
 def test_plastic_text_recovers_the_complete_organico_plastica_pair():
     assert _combine_cell_tokens("P", set()) == {"O", "P"}
     assert _combine_cell_tokens("P", {"P"}) == {"O", "P"}
-
