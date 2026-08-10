@@ -333,3 +333,4 @@ def main() -> int:
     window = MainWindow()
     window.show()
     return app.exec()
+
