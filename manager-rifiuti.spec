@@ -4,7 +4,7 @@ import platform
 
 from PyInstaller.utils.hooks import collect_all
 
-rapidocr_datas, rapidocr_binaries, rapidocr_hiddenimports = collect_all("rapidocr_onnxruntime")
+rapidocr_datas, rapidocr_binaries, rapidocr_hiddenimports = collect_all("rapidocr")
 
 a = Analysis(
     ["launcher.py"],
@@ -35,3 +35,4 @@ if platform.system() == "Darwin":
             "NSHighResolutionCapable": True,
         },
     )
+
