@@ -49,3 +49,15 @@ def test_disabling_a_type_excludes_only_its_rows(qtbot):
     assert dialog.table.item(1, 2).checkState() == Qt.Checked
     assert [(item.day, item.waste) for item in dialog.collections()] == [(date(2026, 7, 3), "P")]
 
+
+def test_type_change_targets_current_row_after_an_earlier_row_is_removed(qtbot):
+    dialog = make_dialog(qtbot)
+    dialog.waste_checks["O"].setChecked(False)
+    dialog.table.removeRow(0)
+
+    selector = dialog.table.cellWidget(0, 1)
+    assert isinstance(selector, QComboBox)
+    selector.setCurrentIndex(selector.findData("O"))
+
+    assert dialog.table.item(0, 2).checkState() == Qt.Unchecked
+
