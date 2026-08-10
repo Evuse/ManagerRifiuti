@@ -5,8 +5,8 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QStandardPaths, Qt, QThread, Signal
-from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
+from PySide6.QtCore import QSettings, QStandardPaths, Qt, QThread, QUrl, Signal
+from PySide6.QtGui import QAction, QDesktopServices, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -50,6 +50,24 @@ def write_backup(path: Path, year: int, collections: list[Collection]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"year": year, "collections": [item.to_dict() for item in collections]}
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def read_backup(path: Path) -> tuple[int, list[Collection]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        year = int(payload["year"])
+        raw_collections = payload["collections"]
+        if not isinstance(raw_collections, list):
+            raise TypeError("collections deve essere una lista")
+        collections = []
+        for item in raw_collections:
+            waste = str(item["waste"])
+            if waste not in WASTE_NAMES:
+                raise ValueError(f"tipologia sconosciuta: {waste}")
+            collections.append(Collection(date.fromisoformat(str(item["day"])), waste))
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Backup non valido: {exc}") from exc
+    return year, sorted(set(collections))
 
 
 class RecognitionWorker(QThread):
@@ -129,9 +147,9 @@ class MetricCard(QFrame):
 
 
 class SettingsDialog(QDialog):
-    changed = Signal(str)
+    changed = Signal()
 
-    def __init__(self, settings: QSettings, parent=None) -> None:
+    def __init__(self, settings: QSettings, current_webhook: str = "", parent=None) -> None:
         super().__init__(parent)
         self.settings = settings
         self.setWindowTitle("Impostazioni")
@@ -139,9 +157,38 @@ class SettingsDialog(QDialog):
         self.theme = QComboBox()
         self.theme.addItems(["Chiaro", "Scuro"])
         self.theme.setCurrentText(str(settings.value("appearance/theme", "Chiaro")))
+        self.accent = QComboBox()
+        self.accent.addItems(["Verde", "Blu", "Viola", "Arancio"])
+        self.accent.setCurrentText(str(settings.value("appearance/accent", "Verde")))
+        self.font_size = QSpinBox()
+        self.font_size.setRange(12, 18)
+        self.font_size.setSuffix(" px")
+        self.font_size.setValue(settings.value("appearance/font_size", 14, type=int))
         self.ha_url = QLineEdit(
             str(settings.value("homeassistant/url", "http://homeassistant.local:8123"))
         )
+        self.webhook = QLineEdit(
+            str(settings.value("homeassistant/webhook_id", current_webhook))
+            if settings.value("homeassistant/remember_webhook", False, type=bool)
+            else current_webhook
+        )
+        self.webhook.setEchoMode(QLineEdit.Password)
+        self.webhook.setPlaceholderText("ID importazione Manager Rifiuti")
+        show_id = QCheckBox("Mostra")
+        show_id.toggled.connect(
+            lambda visible: self.webhook.setEchoMode(
+                QLineEdit.Normal if visible else QLineEdit.Password
+            )
+        )
+        id_row = QHBoxLayout()
+        id_row.addWidget(self.webhook, 1)
+        id_row.addWidget(show_id)
+        self.remember_id = QCheckBox("Salva l'ID su questo PC")
+        self.remember_id.setChecked(
+            settings.value("homeassistant/remember_webhook", False, type=bool)
+        )
+        id_note = QLabel("L'ID viene salvato nelle impostazioni locali di Windows, non cifrato.")
+        id_note.setObjectName("Muted")
         self.auto_backup = QCheckBox("Crea automaticamente un JSON dopo ogni revisione")
         self.auto_backup.setChecked(settings.value("backup/enabled", True, type=bool))
         self.backup_folder = QLineEdit(
@@ -152,16 +199,28 @@ class SettingsDialog(QDialog):
         folder_row = QHBoxLayout()
         folder_row.addWidget(self.backup_folder, 1)
         folder_row.addWidget(browse)
-        form = QFormLayout()
-        form.addRow("Tema:", self.theme)
-        form.addRow("Indirizzo Home Assistant:", self.ha_url)
-        form.addRow("Backup automatico:", self.auto_backup)
-        form.addRow("Cartella backup:", folder_row)
+        appearance_group = QGroupBox("Aspetto")
+        appearance_form = QFormLayout(appearance_group)
+        appearance_form.addRow("Tema:", self.theme)
+        appearance_form.addRow("Colore principale:", self.accent)
+        appearance_form.addRow("Dimensione testo:", self.font_size)
+        ha_group = QGroupBox("Home Assistant")
+        ha_form = QFormLayout(ha_group)
+        ha_form.addRow("Indirizzo:", self.ha_url)
+        ha_form.addRow("ID importazione:", id_row)
+        ha_form.addRow("Memorizzazione:", self.remember_id)
+        ha_form.addRow("", id_note)
+        backup_group = QGroupBox("Backup")
+        backup_form = QFormLayout(backup_group)
+        backup_form.addRow("Backup automatico:", self.auto_backup)
+        backup_form.addRow("Cartella:", folder_row)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
-        layout.addLayout(form)
+        layout.addWidget(appearance_group)
+        layout.addWidget(ha_group)
+        layout.addWidget(backup_group)
         layout.addWidget(buttons)
 
     def choose_folder(self) -> None:
@@ -179,11 +238,23 @@ class SettingsDialog(QDialog):
             )
             return
         self.settings.setValue("appearance/theme", self.theme.currentText())
+        self.settings.setValue("appearance/accent", self.accent.currentText())
+        self.settings.setValue("appearance/font_size", self.font_size.value())
         self.settings.setValue("homeassistant/url", url)
+        self.settings.setValue("homeassistant/remember_webhook", self.remember_id.isChecked())
+        if self.remember_id.isChecked():
+            if not self.webhook.text().strip():
+                QMessageBox.warning(
+                    self, "ID mancante", "Inserisci l'ID oppure disattiva il salvataggio."
+                )
+                return
+            self.settings.setValue("homeassistant/webhook_id", self.webhook.text().strip())
+        else:
+            self.settings.remove("homeassistant/webhook_id")
         self.settings.setValue("backup/enabled", self.auto_backup.isChecked())
         self.settings.setValue("backup/folder", self.backup_folder.text().strip())
         self.settings.sync()
-        self.changed.emit(self.theme.currentText())
+        self.changed.emit()
         self.accept()
 
 
@@ -411,6 +482,18 @@ class MainWindow(QMainWindow):
         metrics.addWidget(self.events_metric)
         metrics.addWidget(self.year_metric)
 
+        import_backup = QPushButton("Importa backup JSON")
+        import_backup.clicked.connect(self.import_json)
+        open_backups = QPushButton("Apri cartella backup")
+        open_backups.clicked.connect(self.open_backup_folder)
+        customize = QPushButton("Personalizza")
+        customize.clicked.connect(self.open_settings)
+        utilities = QHBoxLayout()
+        utilities.addWidget(import_backup)
+        utilities.addWidget(open_backups)
+        utilities.addStretch()
+        utilities.addWidget(customize)
+
         connection = QFrame()
         connection.setObjectName("Card")
         connection_layout = QVBoxLayout(connection)
@@ -423,6 +506,8 @@ class MainWindow(QMainWindow):
         self.webhook = QLineEdit()
         self.webhook.setEchoMode(QLineEdit.Password)
         self.webhook.setPlaceholderText("ID importazione mostrato dall'integrazione")
+        if self.settings.value("homeassistant/remember_webhook", False, type=bool):
+            self.webhook.setText(str(self.settings.value("homeassistant/webhook_id", "")))
         reveal = QCheckBox("Mostra ID")
         reveal.toggled.connect(
             lambda visible: self.webhook.setEchoMode(
@@ -439,9 +524,13 @@ class MainWindow(QMainWindow):
         self.send.setObjectName("Primary")
         self.send.setEnabled(False)
         self.send.clicked.connect(self.send_calendar)
+        clear_remote = QPushButton("Azzera calendario su Home Assistant")
+        clear_remote.setObjectName("Danger")
+        clear_remote.clicked.connect(self.clear_home_assistant)
         connection_layout.addWidget(connection_title)
         connection_layout.addLayout(form)
         connection_layout.addWidget(self.send)
+        connection_layout.addWidget(clear_remote)
 
         actions = QHBoxLayout()
         actions.addWidget(self.analyze, 1)
@@ -452,6 +541,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
         layout.addWidget(subtitle)
         layout.addLayout(metrics)
+        layout.addLayout(utilities)
         layout.addWidget(self.drop_zone)
         layout.addWidget(self.files)
         layout.addLayout(actions)
@@ -558,6 +648,62 @@ class MainWindow(QMainWindow):
             return None
         return path
 
+    def import_json(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Importa backup", "", "JSON (*.json)")
+        if not path:
+            return
+        try:
+            year, collections = read_backup(Path(path))
+        except ValueError as exc:
+            QMessageBox.warning(self, "Backup non valido", str(exc))
+            return
+        self.year = year
+        self.collections = collections
+        self.events_metric.value.setText(str(len(collections)))
+        self.year_metric.value.setText(str(year))
+        self.send.setText(f"Invia {len(collections)} raccolte a Home Assistant")
+        self.send.setEnabled(bool(collections))
+        self.status.setText(f"Backup caricato: {len(collections)} raccolte per il {year}.")
+
+    def open_backup_folder(self) -> None:
+        folder = Path(str(self.settings.value("backup/folder", str(default_backup_folder()))))
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "Cartella non disponibile", str(exc))
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def clear_home_assistant(self) -> None:
+        webhook = self.webhook.text().strip()
+        if not webhook:
+            QMessageBox.warning(
+                self, "ID mancante", "Inserisci prima l'ID importazione di Home Assistant."
+            )
+            return
+        answer = QMessageBox.question(
+            self,
+            "Conferma azzeramento",
+            "Vuoi eliminare tutte le raccolte importate da Manager Rifiuti?\n"
+            "Le altre integrazioni di Home Assistant non verranno modificate.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            upload(
+                self.ha_url.text().strip(),
+                webhook,
+                self.year or datetime.now().astimezone().year,
+                [],
+            )
+        except Exception as exc:  # noqa: BLE001 - convert transport errors into GUI feedback
+            QMessageBox.critical(self, "Azzeramento non riuscito", str(exc))
+            return
+        self.status.setText("Calendario di Manager Rifiuti azzerato su Home Assistant.")
+        QMessageBox.information(self, "Calendario azzerato", "Home Assistant ora contiene 0 raccolte.")
+
     def send_calendar(self) -> None:
         webhook = self.webhook.text().strip()
         if not webhook:
@@ -592,15 +738,22 @@ class MainWindow(QMainWindow):
             self.status.setText(f"Backup esportato in {path}.")
 
     def open_settings(self) -> None:
-        dialog = SettingsDialog(self.settings, self)
+        dialog = SettingsDialog(self.settings, self.webhook.text(), self)
         dialog.changed.connect(self.apply_preferences)
         dialog.exec()
 
-    def apply_preferences(self, theme: str) -> None:
+    def apply_preferences(self) -> None:
         app = QApplication.instance()
         if isinstance(app, QApplication):
-            apply_theme(app, theme)
+            apply_theme(
+                app,
+                str(self.settings.value("appearance/theme", "Chiaro")),
+                str(self.settings.value("appearance/accent", "Verde")),
+                self.settings.value("appearance/font_size", 14, type=int),
+            )
         self.ha_url.setText(str(self.settings.value("homeassistant/url")))
+        if self.settings.value("homeassistant/remember_webhook", False, type=bool):
+            self.webhook.setText(str(self.settings.value("homeassistant/webhook_id", "")))
 
 
 def main() -> int:
@@ -608,7 +761,12 @@ def main() -> int:
     app.setOrganizationName("ManagerRifiuti")
     app.setApplicationName("Manager Rifiuti")
     settings = QSettings()
-    apply_theme(app, str(settings.value("appearance/theme", "Chiaro")))
+    apply_theme(
+        app,
+        str(settings.value("appearance/theme", "Chiaro")),
+        str(settings.value("appearance/accent", "Verde")),
+        settings.value("appearance/font_size", 14, type=int),
+    )
     window = MainWindow()
     window.show()
     return app.exec()
