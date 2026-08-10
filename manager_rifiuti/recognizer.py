@@ -26,6 +26,7 @@ MONTHS = {
     "dicembre": 12,
 }
 TOKENS = ("TS", "O", "I", "V", "M", "P", "C", "S")
+TS_PATTERN = re.compile(r"(?<![A-Z])T[\W_]*[S5](?![A-Z])", re.IGNORECASE)
 
 
 @dataclass
@@ -74,6 +75,19 @@ def rectify(image: np.ndarray) -> np.ndarray:
     return image
 
 
+def extract_waste_tokens(text: str) -> set[str]:
+    """Extract collection codes, including common OCR variants of ``TS``."""
+    normalized = text.upper()
+    found: set[str] = set()
+    if TS_PATTERN.search(normalized):
+        found.add("TS")
+        normalized = TS_PATTERN.sub(" ", normalized)
+    for token in TOKENS[1:]:
+        if re.search(rf"(?<![A-Z]){token}(?![A-Z])", normalized):
+            found.add(token)
+    return found
+
+
 class CalendarRecognizer:
     """Offline recognizer specialized for the municipality's six-column layout."""
 
@@ -118,27 +132,29 @@ class CalendarRecognizer:
         if result.detected_year is None:
             result.warnings.append("Anno non riconosciuto: è obbligatorio confermarlo.")
 
-        # The fixed sheet has six equal month columns. OCR is restricted to each
-        # day row, preventing legend symbols at the bottom from becoming events.
-        h, w = image.shape[:2]
+        # The fixed sheet has six equal month columns. Reading a complete day row
+        # lets OCR join variants such as "T S" while reducing the expensive OCR
+        # calls from about 186 cells to 31 rows per sheet.
+        h = image.shape[0]
         grid_top, grid_bottom = int(h * 0.075), int(h * 0.84)
-        column_width = w / 6
-        for column, month in enumerate(result.months[:6]):
-            days = calendar.monthrange(working_year, month)[1]
-            x0, x1 = int(column * column_width), int((column + 1) * column_width)
-            for day in range(1, days + 1):
-                y0 = int(grid_top + (day - 1) * (grid_bottom - grid_top) / 31)
-                y1 = int(grid_top + day * (grid_bottom - grid_top) / 31)
-                cell = image[y0:y1, x0 + int(column_width * 0.30) : x1]
-                cell_text = " ".join(text.upper() for text, _ in self._text(cell))
-                found: set[str] = set()
-                if "TS" in cell_text:
-                    found.add("TS")
-                    cell_text = cell_text.replace("TS", " ")
-                for token in TOKENS[1:]:
-                    if re.search(rf"(?<![A-Z]){token}(?![A-Z])", cell_text):
-                        found.add(token)
-                for token in found:
+        months = result.months[:6]
+        for day in range(1, 32):
+            y0 = int(grid_top + (day - 1) * (grid_bottom - grid_top) / 31)
+            y1 = int(grid_top + day * (grid_bottom - grid_top) / 31)
+            row_image = image[y0:y1, :]
+            row_width = row_image.shape[1]
+            column_width = row_width / 6
+            column_text: dict[int, list[str]] = {column: [] for column in range(len(months))}
+            for text, box in self._text(row_image):
+                center_x = sum(point[0] for point in box) / len(box)
+                column = min(int(center_x / column_width), 5)
+                if column in column_text:
+                    column_text[column].append(text)
+            for column, texts in column_text.items():
+                month = months[column]
+                if day > calendar.monthrange(working_year, month)[1]:
+                    continue
+                for token in extract_waste_tokens(" ".join(texts)):
                     result.collections.append(
                         Collection(date(working_year, month, day), token, 0.82)
                     )
@@ -147,3 +163,4 @@ class CalendarRecognizer:
                 "Nessun simbolo riconosciuto: verificare manualmente tutte le date."
             )
         return result
+
