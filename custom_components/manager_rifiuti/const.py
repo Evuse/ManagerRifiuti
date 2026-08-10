@@ -5,7 +5,7 @@ STORAGE_KEY = f"{DOMAIN}.calendar"
 WASTE_NAMES = {
     "O": "Organico",
     "I": "Indifferenziata",
-    "TS": "Pannolini",
+    "TS": "Tessili sanitari (pannolini)",
     "V": "Vetro",
     "M": "Metallo",
     "P": "Plastica",
@@ -17,3 +17,4 @@ CONF_NOTIFY_TIME = "notify_time"
 CONF_REMINDER_TIME = "reminder_time"
 CONF_ENABLED_WASTE = "enabled_waste"
 DEFAULT_NOTIFY_TIME = "20:00:00"
+
