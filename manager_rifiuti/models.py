@@ -8,7 +8,7 @@ WASTE_NAMES = {
     "I": "Indifferenziata",
     "TS": "Tessili sanitari (pannolini)",
     "V": "Vetro",
-    "M": "Metallo",
+    "M": "Metalli",
     "P": "Plastica",
     "C": "Carta",
     "S": "Sfalci verdi",
