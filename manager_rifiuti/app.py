@@ -115,7 +115,7 @@ class DropZone(QFrame):
 
 
 class MetricCard(QFrame):
-    def __init__(self, caption: str, value: str = "â€”") -> None:
+    def __init__(self, caption: str, value: str = "—") -> None:
         super().__init__()
         self.setObjectName("Card")
         layout = QVBoxLayout(self)
@@ -147,7 +147,7 @@ class SettingsDialog(QDialog):
         self.backup_folder = QLineEdit(
             str(settings.value("backup/folder", str(default_backup_folder())))
         )
-        browse = QPushButton("Sfogliaâ€¦")
+        browse = QPushButton("Sfoglia…")
         browse.clicked.connect(self.choose_folder)
         folder_row = QHBoxLayout()
         folder_row.addWidget(self.backup_folder, 1)
@@ -196,7 +196,7 @@ class ReviewDialog(QDialog):
         self.year = QSpinBox()
         self.year.setRange(2020, 2100)
         self.year.setValue(years[0] if years else datetime.now().astimezone().year)
-        self.confirm = QCheckBox("Confermo che l'anno selezionato Ã¨ corretto")
+        self.confirm = QCheckBox("Confermo che l'anno selezionato è corretto")
         self.months_need_confirmation = any(
             any("Mesi non riconosciuti" in warning for warning in result.warnings)
             for result in results
@@ -284,7 +284,7 @@ class ReviewDialog(QDialog):
             lambda _index, selected=selector: self.sync_selector_enabled(selected)
         )
         self.table.setCellWidget(row, 1, selector)
-        checked = QTableWidgetItem("SÃ¬")
+        checked = QTableWidgetItem("Sì")
         checked.setFlags(checked.flags() | Qt.ItemIsUserCheckable)
         enabled = self.waste_checks[str(selector.currentData())].isChecked()
         checked.setCheckState(Qt.Checked if enabled else Qt.Unchecked)
@@ -404,8 +404,8 @@ class MainWindow(QMainWindow):
         self.status.setObjectName("Status")
 
         self.images_metric = MetricCard("Immagini", "0")
-        self.events_metric = MetricCard("Raccolte", "â€”")
-        self.year_metric = MetricCard("Anno", "â€”")
+        self.events_metric = MetricCard("Raccolte", "—")
+        self.year_metric = MetricCard("Anno", "—")
         metrics = QHBoxLayout()
         metrics.addWidget(self.images_metric)
         metrics.addWidget(self.events_metric)
@@ -463,11 +463,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(widget)
 
         file_menu = self.menuBar().addMenu("File")
-        export_action = QAction("Esporta un altro backup JSONâ€¦", self)
+        export_action = QAction("Esporta un altro backup JSON…", self)
         export_action.triggered.connect(self.export_json)
         file_menu.addAction(export_action)
         file_menu.addAction("Azzera sessione", self.reset_session)
-        preferences = QAction("Impostazioniâ€¦", self)
+        preferences = QAction("Impostazioni…", self)
         preferences.triggered.connect(self.open_settings)
         self.menuBar().addMenu("Personalizza").addAction(preferences)
 
@@ -486,10 +486,10 @@ class MainWindow(QMainWindow):
         if not valid:
             return
         self.paths = valid
-        self.files.setText(" â€¢ ".join(Path(path).name for path in valid))
+        self.files.setText(" • ".join(Path(path).name for path in valid))
         self.images_metric.value.setText(str(len(valid)))
-        self.events_metric.value.setText("â€”")
-        self.year_metric.value.setText("â€”")
+        self.events_metric.value.setText("—")
+        self.year_metric.value.setText("—")
         self.analyze.setEnabled(True)
         self.send.setEnabled(False)
         self.status.setText("Immagini caricate. Puoi avviare l'analisi.")
@@ -500,17 +500,17 @@ class MainWindow(QMainWindow):
         self.year = None
         self.files.setText("Nessuna immagine selezionata")
         self.images_metric.value.setText("0")
-        self.events_metric.value.setText("â€”")
-        self.year_metric.value.setText("â€”")
+        self.events_metric.value.setText("—")
+        self.year_metric.value.setText("—")
         self.analyze.setEnabled(False)
         self.send.setEnabled(False)
-        self.status.setText("Sessione azzerata. Home Assistant non Ã¨ stato modificato.")
+        self.status.setText("Sessione azzerata. Home Assistant non è stato modificato.")
 
     def start_analysis(self) -> None:
         self.progress.setRange(0, 0)
         self.progress.setVisible(True)
         self.analyze.setEnabled(False)
-        self.status.setText("Correzione prospettiva e riconoscimento dei simboli in corsoâ€¦")
+        self.status.setText("Correzione prospettiva e riconoscimento dei simboli in corso…")
         self.worker = RecognitionWorker(self.paths)
         self.worker.completed.connect(self.review)
         self.worker.failed.connect(self.failure)
@@ -527,7 +527,7 @@ class MainWindow(QMainWindow):
         self.analyze.setEnabled(True)
         dialog = ReviewDialog(results, self)
         if dialog.exec() != QDialog.Accepted:
-            self.status.setText("Revisione annullata: nessun dato Ã¨ stato modificato.")
+            self.status.setText("Revisione annullata: nessun dato è stato modificato.")
             return
         self.collections = dialog.collections()
         self.year = dialog.year.value()
@@ -553,7 +553,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Backup non creato",
-                f"Il calendario Ã¨ pronto, ma il backup automatico non Ã¨ stato salvato:\n{exc}",
+                f"Il calendario è pronto, ma il backup automatico non è stato salvato:\n{exc}",
             )
             return None
         return path
@@ -612,4 +612,3 @@ def main() -> int:
     window = MainWindow()
     window.show()
     return app.exec()
-
