@@ -19,6 +19,7 @@ from .const import (
     WASTE_NAMES,
 )
 from .coordinator import WasteCoordinator
+from .notifications import render_notification
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -39,41 +40,45 @@ async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
         hass, DOMAIN, "Importazione calendario", entry.data[CONF_WEBHOOK_ID], handle_webhook
     )
 
-    async def notify(now, reminder=False):
+    async def notify(now, reminder=False, test=False):
         options = entry.options
         enabled = {
-            x.strip() for x in options.get(CONF_ENABLED_WASTE, ",".join(WASTE_NAMES)).split(",")
+            item.strip()
+            for item in options.get(CONF_ENABLED_WASTE, ",".join(WASTE_NAMES)).split(",")
         }
         tomorrow = now.date() + timedelta(days=1)
-        for item in coordinator.for_day(tomorrow):
-            if item["waste"] not in enabled or coordinator.is_complete(item):
+        items = [{"waste": "O"}] if test else coordinator.for_day(tomorrow)
+        for item in items:
+            if item["waste"] not in enabled or (not test and coordinator.is_complete(item)):
                 continue
+            title, message, action_title = render_notification(
+                options, item["waste"], tomorrow, reminder
+            )
             for service in filter(
-                None, (x.strip() for x in options.get(CONF_NOTIFY_SERVICES, "").splitlines())
+                None, (value.strip() for value in options.get(CONF_NOTIFY_SERVICES, "").splitlines())
             ):
                 domain, _, name = service.partition(".")
                 if domain != "notify" or not name:
                     continue
+                data = {}
+                if not test:
+                    data["actions"] = [
+                        {
+                            "action": f"MR_DONE_{tomorrow.isoformat()}_{item['waste']}",
+                            "title": action_title,
+                        }
+                    ]
                 await hass.services.async_call(
                     domain,
                     name,
-                    {
-                        "title": "Promemoria raccolta" if reminder else "Raccolta rifiuti domani",
-                        "message": f"Porta fuori: {WASTE_NAMES[item['waste']]}",
-                        "data": {
-                            "actions": [
-                                {
-                                    "action": f"MR_DONE_{tomorrow.isoformat()}_{item['waste']}",
-                                    "title": "Rifiuti già portati fuori",
-                                }
-                            ]
-                        },
-                    },
+                    {"title": title, "message": message, "data": data},
                 )
+
+    hass.data[DOMAIN][f"{entry.entry_id}_notify"] = notify
 
     def schedule(value, reminder=False):
         try:
-            hour, minute, second = (int(x) for x in value.split(":"))
+            hour, minute, second = (int(item) for item in value.split(":"))
         except (AttributeError, ValueError):
             return None
         return async_track_time_change(
@@ -109,4 +114,5 @@ async def async_unload_entry(hass, entry) -> bool:
     result = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if result:
         hass.data[DOMAIN].pop(entry.entry_id)
+        hass.data[DOMAIN].pop(f"{entry.entry_id}_notify", None)
     return result
