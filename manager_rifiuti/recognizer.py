@@ -76,15 +76,23 @@ def rectify(image: np.ndarray) -> np.ndarray:
 
 
 def extract_waste_tokens(text: str) -> set[str]:
-    """Extract collection codes, including common OCR variants of ``TS``."""
+    """Extract every legend code, including joined text and OCR variants of ``TS``."""
     normalized = text.upper()
     found: set[str] = set()
     if TS_PATTERN.search(normalized):
         found.add("TS")
-        normalized = TS_PATTERN.sub(" ", normalized)
-    for token in TOKENS[1:]:
-        if re.search(rf"(?<![A-Z]){token}(?![A-Z])", normalized):
-            found.add(token)
+        normalized = TS_PATTERN.sub(" TS ", normalized)
+    for chunk in re.findall(r"[A-Z]+", normalized):
+        index = 0
+        while index < len(chunk):
+            if chunk.startswith("TS", index):
+                found.add("TS")
+                index += 2
+            else:
+                token = chunk[index]
+                if token in TOKENS[1:]:
+                    found.add(token)
+                index += 1
     return found
 
 
@@ -132,29 +140,25 @@ class CalendarRecognizer:
         if result.detected_year is None:
             result.warnings.append("Anno non riconosciuto: è obbligatorio confermarlo.")
 
-        # The fixed sheet has six equal month columns. Reading a complete day row
-        # lets OCR join variants such as "T S" while reducing the expensive OCR
-        # calls from about 186 cells to 31 rows per sheet.
-        h = image.shape[0]
+        # The fixed sheet has six equal month columns. Each calendar cell is read
+        # independently so text from adjacent months cannot be merged or assigned
+        # to the wrong day. The left margin contains the printed day number and is
+        # ignored; only the area containing the legend codes is sent to OCR.
+        h, w = image.shape[:2]
         grid_top, grid_bottom = int(h * 0.075), int(h * 0.84)
-        months = result.months[:6]
-        for day in range(1, 32):
-            y0 = int(grid_top + (day - 1) * (grid_bottom - grid_top) / 31)
-            y1 = int(grid_top + day * (grid_bottom - grid_top) / 31)
-            row_image = image[y0:y1, :]
-            row_width = row_image.shape[1]
-            column_width = row_width / 6
-            column_text: dict[int, list[str]] = {column: [] for column in range(len(months))}
-            for text, box in self._text(row_image):
-                center_x = sum(point[0] for point in box) / len(box)
-                column = min(int(center_x / column_width), 5)
-                if column in column_text:
-                    column_text[column].append(text)
-            for column, texts in column_text.items():
-                month = months[column]
-                if day > calendar.monthrange(working_year, month)[1]:
-                    continue
-                for token in extract_waste_tokens(" ".join(texts)):
+        column_width = w / 6
+        for column, month in enumerate(result.months[:6]):
+            days = calendar.monthrange(working_year, month)[1]
+            x0, x1 = int(column * column_width), int((column + 1) * column_width)
+            for day in range(1, days + 1):
+                y0 = int(grid_top + (day - 1) * (grid_bottom - grid_top) / 31)
+                y1 = int(grid_top + day * (grid_bottom - grid_top) / 31)
+                cell = image[y0:y1, x0 + int(column_width * 0.18) : x1]
+                if 0 < cell.shape[0] < 48:
+                    scale = 48 / cell.shape[0]
+                    cell = cv2.resize(cell, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+                cell_text = " ".join(text for text, _ in self._text(cell))
+                for token in extract_waste_tokens(cell_text):
                     result.collections.append(
                         Collection(date(working_year, month, day), token, 0.82)
                     )
