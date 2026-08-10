@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.5 seconds
+Output:
 from __future__ import annotations
 
 import json
@@ -115,7 +118,7 @@ class DropZone(QFrame):
 
 
 class MetricCard(QFrame):
-    def __init__(self, caption: str, value: str = "—") -> None:
+    def __init__(self, caption: str, value: str = "â€”") -> None:
         super().__init__()
         self.setObjectName("Card")
         layout = QVBoxLayout(self)
@@ -147,7 +150,7 @@ class SettingsDialog(QDialog):
         self.backup_folder = QLineEdit(
             str(settings.value("backup/folder", str(default_backup_folder())))
         )
-        browse = QPushButton("Sfoglia…")
+        browse = QPushButton("Sfogliaâ€¦")
         browse.clicked.connect(self.choose_folder)
         folder_row = QHBoxLayout()
         folder_row.addWidget(self.backup_folder, 1)
@@ -196,172 +199,420 @@ class ReviewDialog(QDialog):
         self.year = QSpinBox()
         self.year.setRange(2020, 2100)
         self.year.setValue(years[0] if years else datetime.now().astimezone().year)
-        self.confirm =…8684 tokens truncated…left, box_right))
-            elif normalized.isdigit() and 1 <= int(normalized) <= 31:
-                day_parts.append((y, box_left, box_right))
-            elif WEEKDAY_LABEL.match(normalized):
-                weekday_parts.append((y, box_left, box_right))
-
-    row_tolerance = height / 100
-    for y, day_left, day_right in day_parts:
-        weekdays = [
-            (weekday_y, weekday_right)
-            for weekday_y, weekday_left, weekday_right in weekday_parts
-            if abs(weekday_y - y) <= row_tolerance
-            and day_right <= weekday_left < left + (right - left) * 0.75
-        ]
-        if weekdays:
-            _weekday_y, weekday_right = min(weekdays, key=lambda item: abs(item[0] - y))
-            labels.append((y, day_left, weekday_right))
-    if len(labels) < 4:
-        return (
-            np.array([left + (right - left) * 0.08, 0.0]),
-            np.array([left + (right - left) * 0.32, 0.0]),
+        self.confirm = QCheckBox("Confermo che l'anno selezionato Ã¨ corretto")
+        self.months_need_confirmation = any(
+            any("Mesi non riconosciuti" in warning for warning in result.warnings)
+            for result in results
         )
-    design = np.array([[1, y] for y, _left, _right in labels])
-
-    def fit(values: np.ndarray) -> np.ndarray:
-        result = np.linalg.lstsq(design, values, rcond=None)[0]
-        residuals = np.abs(values - design @ result)
-        inliers = residuals < max(12.0, (right - left) * 0.06)
-        if inliers.sum() >= 4:
-            result = np.linalg.lstsq(design[inliers], values[inliers], rcond=None)[0]
-        return result
-
-    return (
-        fit(np.array([label_left for _y, label_left, _label_right in labels])),
-        fit(np.array([label_right for _y, _label_left, label_right in labels])),
-    )
-
-
-def _build_grids(
-    words: list[tuple[str, list]], hits: list[tuple[int, float, float]], shape: tuple
-) -> list[MonthGrid]:
-    height, width = shape[:2]
-    if len(hits) < 2:
-        months = [7, 8, 9, 10, 11, 12]
-        column_width = width / 6
-        return [
-            MonthGrid(
-                month,
-                index * column_width,
-                (index + 1) * column_width,
-                np.array([height * 0.063, height * 0.024, -height * 0.00009]),
-                np.array([(index + 0.08) * column_width, 0.0]),
-                np.array([(index + 0.28) * column_width, 0.0]),
+        self.confirm_months = QCheckBox(
+            "Confermo di avere verificato manualmente i mesi non riconosciuti"
+        )
+        self.confirm_months.setVisible(self.months_need_confirmation)
+        waste_group = QGroupBox("Tipologie da importare")
+        waste_layout = QGridLayout(waste_group)
+        self.waste_checks: dict[str, QCheckBox] = {}
+        for index, (code, name) in enumerate(WASTE_NAMES.items()):
+            checkbox = QCheckBox(name)
+            checkbox.setChecked(True)
+            checkbox.toggled.connect(
+                lambda checked, selected_code=code: self.set_waste_enabled(selected_code, checked)
             )
-            for index, month in enumerate(months)
-        ]
-
-    centers = [x for _, x, _ in hits]
-    boundaries = [0.0]
-    boundaries.extend((first + second) / 2 for first, second in pairwise(centers))
-    boundaries.append(float(width))
-    grids = []
-    for (month, _x, header_y), left, right in zip(hits, boundaries, boundaries[1:]):
-        label_start, label_edge = _fit_label_edges(words, left, right, header_y, height)
-        grids.append(
-            MonthGrid(
-                month,
-                left,
-                right,
-                _fit_row_curve(words, left, right, header_y, height),
-                label_start,
-                label_edge,
+            self.waste_checks[code] = checkbox
+            waste_layout.addWidget(checkbox, index // 2, index % 2)
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["Data (GG-MM)", "Tipologia di rifiuto", "Includi"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setAlternatingRowColors(True)
+        self.table.itemChanged.connect(lambda _item: self.update_count())
+        seen = set()
+        for result in results:
+            for collection in result.collections:
+                key = (collection.day.month, collection.day.day, collection.waste)
+                if key not in seen:
+                    self.add_row(*key)
+                    seen.add(key)
+        self.count = QLabel()
+        self.count.setObjectName("Status")
+        self.update_count()
+        add = QPushButton("+ Aggiungi raccolta")
+        remove = QPushButton("Rimuovi selezionate")
+        add.clicked.connect(lambda: self.add_row(1, 1, "O"))
+        remove.clicked.connect(self.remove_rows)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("Conferma e crea backup")
+        buttons.button(QDialogButtonBox.Ok).setObjectName("Primary")
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+        warning_text = "\n".join(warning for result in results for warning in result.warnings)
+        layout = QVBoxLayout(self)
+        heading = QLabel("Verifica il risultato prima dell'importazione")
+        heading.setObjectName("HeroTitle")
+        layout.addWidget(heading)
+        layout.addWidget(
+            QLabel(
+                "Tutte le tipologie sono incluse. Puoi correggere, aggiungere o escludere righe."
             )
         )
-    return grids
+        if warning_text:
+            warning = QLabel(warning_text)
+            warning.setStyleSheet("color: #d97928")
+            layout.addWidget(warning)
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Anno rilevato:"))
+        top.addWidget(self.year)
+        top.addWidget(self.confirm)
+        top.addStretch()
+        layout.addLayout(top)
+        layout.addWidget(self.confirm_months)
+        layout.addWidget(waste_group)
+        layout.addWidget(self.count)
+        layout.addWidget(self.table, 1)
+        row = QHBoxLayout()
+        row.addWidget(add)
+        row.addWidget(remove)
+        row.addStretch()
+        layout.addLayout(row)
+        layout.addWidget(buttons)
 
+    def add_row(self, month: int, day: int, waste: str) -> None:
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self.table.setItem(row, 0, QTableWidgetItem(f"{day:02d}-{month:02d}"))
+        selector = QComboBox()
+        for code, name in WASTE_NAMES.items():
+            selector.addItem(name, code)
+        selector.setCurrentIndex(max(selector.findData(waste), 0))
+        selector.currentIndexChanged.connect(
+            lambda _index, selected=selector: self.sync_selector_enabled(selected)
+        )
+        self.table.setCellWidget(row, 1, selector)
+        checked = QTableWidgetItem("SÃ¬")
+        checked.setFlags(checked.flags() | Qt.ItemIsUserCheckable)
+        enabled = self.waste_checks[str(selector.currentData())].isChecked()
+        checked.setCheckState(Qt.Checked if enabled else Qt.Unchecked)
+        self.table.setItem(row, 2, checked)
+        self.update_count()
 
-class CalendarRecognizer:
-    """Offline recognizer specialized for the municipality's six-column layout."""
+    def row_waste(self, row: int) -> str:
+        selector = self.table.cellWidget(row, 1)
+        if not isinstance(selector, QComboBox):
+            raise TypeError(f"Tipologia non valida alla riga {row + 1}")
+        return str(selector.currentData())
 
-    def __init__(self) -> None:
+    def sync_row_enabled(self, row: int) -> None:
+        include = self.table.item(row, 2)
+        if include is not None:
+            include.setCheckState(
+                Qt.Checked if self.waste_checks[self.row_waste(row)].isChecked() else Qt.Unchecked
+            )
+
+    def sync_selector_enabled(self, selector: QComboBox) -> None:
+        for row in range(self.table.rowCount()):
+            if self.table.cellWidget(row, 1) is selector:
+                self.sync_row_enabled(row)
+                self.update_count()
+                return
+
+    def set_waste_enabled(self, waste: str, enabled: bool) -> None:
+        for row in range(self.table.rowCount()):
+            if self.row_waste(row) == waste:
+                self.table.item(row, 2).setCheckState(Qt.Checked if enabled else Qt.Unchecked)
+        self.update_count()
+
+    def update_count(self) -> None:
+        if not hasattr(self, "count"):
+            return
+        included = sum(
+            self.table.item(row, 2) is not None
+            and self.table.item(row, 2).checkState() == Qt.Checked
+            for row in range(self.table.rowCount())
+        )
+        self.count.setText(f"{included} raccolte incluse su {self.table.rowCount()} rilevate")
+
+    def remove_rows(self) -> None:
+        for index in sorted({item.row() for item in self.table.selectedIndexes()}, reverse=True):
+            self.table.removeRow(index)
+        self.update_count()
+
+    def _accept(self) -> None:
+        if not self.confirm.isChecked():
+            QMessageBox.warning(self, "Anno non confermato", "Conferma esplicitamente l'anno.")
+            return
+        if self.months_need_confirmation and not self.confirm_months.isChecked():
+            QMessageBox.warning(
+                self,
+                "Mesi non confermati",
+                "Conferma di avere verificato i mesi mancanti prima di continuare.",
+            )
+            return
         try:
-            from rapidocr import RapidOCR
-        except ImportError:
+            self.collections()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Riga non valida", str(exc))
+            return
+        self.accept()
+
+    def collections(self) -> list[Collection]:
+        if not any(checkbox.isChecked() for checkbox in self.waste_checks.values()):
+            raise ValueError("Seleziona almeno una tipologia di rifiuto da importare.")
+        values = []
+        for row in range(self.table.rowCount()):
+            waste = self.row_waste(row)
+            if (
+                not self.waste_checks[waste].isChecked()
+                or self.table.item(row, 2).checkState() != Qt.Checked
+            ):
+                continue
+            raw_date = self.table.item(row, 0).text().strip()
             try:
-                from rapidocr_onnxruntime import RapidOCR
-            except ImportError:
-                self.ocr = None
-            else:
-                self.ocr = RapidOCR()
-        else:
-            self.ocr = RapidOCR()
+                day, month = (int(value) for value in raw_date.split("-"))
+                collection_day = date(self.year.value(), month, day)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Data non valida alla riga {row + 1}: {raw_date}") from exc
+            values.append(Collection(collection_day, waste))
+        return sorted(set(values))
 
-    def _text(self, image: np.ndarray) -> list[tuple[str, list]]:
-        if self.ocr is None:
-            return []
-        output = self.ocr(image)
-        if hasattr(output, "txts"):
-            boxes = getattr(output, "boxes", None)
-            texts = getattr(output, "txts", None)
-            if boxes is None or texts is None:
-                return []
-            return [(str(text).strip(), box.tolist()) for text, box in zip(texts, boxes)]
-        legacy_output, _elapsed = output
-        return [(str(item[1]).strip(), item[0]) for item in (legacy_output or [])]
 
-    def recognize(self, path: str | Path, fallback_year: int | None = None) -> RecognitionResult:
-        image = cv2.imread(str(path))
-        if image is None:
-            raise ValueError(f"Impossibile leggere l'immagine: {path}")
-        image = rectify(image)
-        result = RecognitionResult(preview=image)
-        words = self._text(image)
-        all_text = " ".join(text for text, _ in words).lower()
-        years = [year for year in re.findall(r"\b20\d{2}\b", all_text) if int(year) >= 2020]
-        result.detected_year = int(years[0]) if years else fallback_year
-        month_hits = _complete_semester_hits(_month_hits(words), image.shape[1])
-        result.months = [month for month, _x, _y in month_hits]
-        if not result.months:
-            result.warnings.append("Mesi non riconosciuti: selezionarli nella revisione.")
-            result.months = [7, 8, 9, 10, 11, 12]
-        working_year = result.detected_year or fallback_year or datetime.now().astimezone().year
-        if result.detected_year is None:
-            result.warnings.append("Anno non riconosciuto: è obbligatorio confermarlo.")
+class MainWindow(QMainWindow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.settings = QSettings()
+        self.setWindowTitle("Manager Rifiuti")
+        self.setMinimumSize(820, 650)
+        self.resize(1040, 760)
+        self.paths: list[str] = []
+        self.collections: list[Collection] = []
+        self.year: int | None = None
+        self.worker: RecognitionWorker | None = None
 
-        # Month headers and printed day labels define the grid directly. This
-        # compensates for camera perspective instead of assuming equal rows.
-        grids = _build_grids(words, month_hits, image.shape)
-        for grid_index, grid in enumerate(grids):
-            days = calendar.monthrange(working_year, grid.month)[1]
-            for day in range(1, days + 1):
-                center = grid.row_center(day)
-                previous = grid.row_center(day - 1) if day > 1 else 2 * center - grid.row_center(2)
-                following = (
-                    grid.row_center(day + 1) if day < 31 else 2 * center - grid.row_center(30)
-                )
-                y0 = max(0, int((previous + center) / 2))
-                y1 = min(image.shape[0], int((center + following) / 2))
-                margin = max(4.0, (grid.right - grid.left) * 0.01)
-                label_right = grid.label_right(center)
-                x0 = max(0, int(label_right + margin))
-                if grid_index + 1 < len(grids):
-                    x1 = int(grids[grid_index + 1].label_left(center) - margin)
-                elif grid_index:
-                    previous_start = grids[grid_index - 1].label_left(center)
-                    x1 = int(grid.label_left(center) + (grid.label_left(center) - previous_start))
-                else:
-                    x1 = int(grid.right)
-                x1 = min(image.shape[1], max(x0 + 1, x1))
-                cell = image[y0:y1, x0:x1]
-                # RapidOCR is intentionally run once on the full page. Reusing
-                # those positioned words is much faster than 181-186 separate
-                # model invocations and preserves more context for tiny glyphs.
-                cell_text = " ".join(
-                    text
-                    for text, box in words
-                    if x0 <= _box_center(box)[0] < x1 and y0 <= _box_center(box)[1] < y1
-                )
-                visual_tokens = _visual_waste_tokens(cell)
-                tokens = _combine_cell_tokens(cell_text, visual_tokens)
-                for token in tokens:
-                    result.collections.append(
-                        Collection(date(working_year, grid.month, day), token, 0.82)
-                    )
-        if not result.collections:
-            result.warnings.append(
-                "Nessun simbolo riconosciuto: verificare manualmente tutte le date."
+        title = QLabel("Il calendario rifiuti, senza fatica")
+        title.setObjectName("HeroTitle")
+        subtitle = QLabel("Analisi locale delle fotografie e invio diretto a Home Assistant.")
+        subtitle.setObjectName("Subtitle")
+        self.drop_zone = DropZone()
+        self.drop_zone.files_selected.connect(self.select_or_open_files)
+        self.files = QLabel("Nessuna immagine selezionata")
+        self.files.setObjectName("Muted")
+        self.analyze = QPushButton("Analizza le immagini")
+        self.analyze.setObjectName("Primary")
+        self.analyze.setEnabled(False)
+        self.analyze.clicked.connect(self.start_analysis)
+        self.clear = QPushButton("Azzera selezione")
+        self.clear.clicked.connect(self.reset_session)
+        self.progress = QProgressBar()
+        self.progress.setTextVisible(False)
+        self.progress.setVisible(False)
+        self.status = QLabel("Pronto. Le immagini restano sempre su questo computer.")
+        self.status.setObjectName("Status")
+
+        self.images_metric = MetricCard("Immagini", "0")
+        self.events_metric = MetricCard("Raccolte", "â€”")
+        self.year_metric = MetricCard("Anno", "â€”")
+        metrics = QHBoxLayout()
+        metrics.addWidget(self.images_metric)
+        metrics.addWidget(self.events_metric)
+        metrics.addWidget(self.year_metric)
+
+        connection = QFrame()
+        connection.setObjectName("Card")
+        connection_layout = QVBoxLayout(connection)
+        connection_layout.setContentsMargins(20, 18, 20, 18)
+        connection_title = QLabel("Connessione a Home Assistant")
+        connection_title.setStyleSheet("font-size: 17px; font-weight: 700;")
+        self.ha_url = QLineEdit(
+            str(self.settings.value("homeassistant/url", "http://homeassistant.local:8123"))
+        )
+        self.webhook = QLineEdit()
+        self.webhook.setEchoMode(QLineEdit.Password)
+        self.webhook.setPlaceholderText("ID importazione mostrato dall'integrazione")
+        reveal = QCheckBox("Mostra ID")
+        reveal.toggled.connect(
+            lambda visible: self.webhook.setEchoMode(
+                QLineEdit.Normal if visible else QLineEdit.Password
             )
-        return result
+        )
+        webhook_row = QHBoxLayout()
+        webhook_row.addWidget(self.webhook, 1)
+        webhook_row.addWidget(reveal)
+        form = QFormLayout()
+        form.addRow("Indirizzo:", self.ha_url)
+        form.addRow("ID importazione:", webhook_row)
+        self.send = QPushButton("Invia il calendario a Home Assistant")
+        self.send.setObjectName("Primary")
+        self.send.setEnabled(False)
+        self.send.clicked.connect(self.send_calendar)
+        connection_layout.addWidget(connection_title)
+        connection_layout.addLayout(form)
+        connection_layout.addWidget(self.send)
+
+        actions = QHBoxLayout()
+        actions.addWidget(self.analyze, 1)
+        actions.addWidget(self.clear)
+        layout = QVBoxLayout()
+        layout.setContentsMargins(30, 24, 30, 30)
+        layout.setSpacing(14)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        layout.addLayout(metrics)
+        layout.addWidget(self.drop_zone)
+        layout.addWidget(self.files)
+        layout.addLayout(actions)
+        layout.addWidget(self.progress)
+        layout.addWidget(self.status)
+        layout.addWidget(connection)
+        widget = QWidget()
+        widget.setLayout(layout)
+        self.setCentralWidget(widget)
+
+        file_menu = self.menuBar().addMenu("File")
+        export_action = QAction("Esporta un altro backup JSONâ€¦", self)
+        export_action.triggered.connect(self.export_json)
+        file_menu.addAction(export_action)
+        file_menu.addAction("Azzera sessione", self.reset_session)
+        preferences = QAction("Impostazioniâ€¦", self)
+        preferences.triggered.connect(self.open_settings)
+        self.menuBar().addMenu("Personalizza").addAction(preferences)
+
+    def select_or_open_files(self, paths: list[str]) -> None:
+        if not paths:
+            paths, _ = QFileDialog.getOpenFileNames(
+                self, "Calendario", "", "Immagini (*.jpg *.jpeg *.png *.webp *.tif *.tiff)"
+            )
+        self.set_files(paths)
+
+    def set_files(self, paths: list[str]) -> None:
+        valid = [path for path in paths if Path(path).suffix.lower() in IMAGE_SUFFIXES]
+        if len(valid) > 2:
+            QMessageBox.warning(self, "Troppi file", "Seleziona al massimo due immagini.")
+            return
+        if not valid:
+            return
+        self.paths = valid
+        self.files.setText(" â€¢ ".join(Path(path).name for path in valid))
+        self.images_metric.value.setText(str(len(valid)))
+        self.events_metric.value.setText("â€”")
+        self.year_metric.value.setText("â€”")
+        self.analyze.setEnabled(True)
+        self.send.setEnabled(False)
+        self.status.setText("Immagini caricate. Puoi avviare l'analisi.")
+
+    def reset_session(self) -> None:
+        self.paths = []
+        self.collections = []
+        self.year = None
+        self.files.setText("Nessuna immagine selezionata")
+        self.images_metric.value.setText("0")
+        self.events_metric.value.setText("â€”")
+        self.year_metric.value.setText("â€”")
+        self.analyze.setEnabled(False)
+        self.send.setEnabled(False)
+        self.status.setText("Sessione azzerata. Home Assistant non Ã¨ stato modificato.")
+
+    def start_analysis(self) -> None:
+        self.progress.setRange(0, 0)
+        self.progress.setVisible(True)
+        self.analyze.setEnabled(False)
+        self.status.setText("Correzione prospettiva e riconoscimento dei simboli in corsoâ€¦")
+        self.worker = RecognitionWorker(self.paths)
+        self.worker.completed.connect(self.review)
+        self.worker.failed.connect(self.failure)
+        self.worker.start()
+
+    def failure(self, message: str) -> None:
+        self.progress.setVisible(False)
+        self.analyze.setEnabled(True)
+        self.status.setText("Analisi non riuscita. Controlla il messaggio di errore.")
+        QMessageBox.critical(self, "Analisi non riuscita", message)
+
+    def review(self, results: list[RecognitionResult]) -> None:
+        self.progress.setVisible(False)
+        self.analyze.setEnabled(True)
+        dialog = ReviewDialog(results, self)
+        if dialog.exec() != QDialog.Accepted:
+            self.status.setText("Revisione annullata: nessun dato Ã¨ stato modificato.")
+            return
+        self.collections = dialog.collections()
+        self.year = dialog.year.value()
+        self.send.setText(f"Invia {len(self.collections)} raccolte a Home Assistant")
+        self.send.setEnabled(True)
+        self.events_metric.value.setText(str(len(self.collections)))
+        self.year_metric.value.setText(str(self.year))
+        backup = self.create_automatic_backup()
+        message = f"Revisione completata: {len(self.collections)} raccolte per il {self.year}."
+        if backup:
+            message += f" Backup salvato in {backup}."
+        self.status.setText(message)
+
+    def create_automatic_backup(self) -> Path | None:
+        if not self.settings.value("backup/enabled", True, type=bool):
+            return None
+        folder = Path(str(self.settings.value("backup/folder", str(default_backup_folder()))))
+        timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+        path = folder / f"raccolte-{self.year}-{timestamp}.json"
+        try:
+            write_backup(path, self.year or 0, self.collections)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                "Backup non creato",
+                f"Il calendario Ã¨ pronto, ma il backup automatico non Ã¨ stato salvato:\n{exc}",
+            )
+            return None
+        return path
+
+    def send_calendar(self) -> None:
+        webhook = self.webhook.text().strip()
+        if not webhook:
+            QMessageBox.warning(
+                self, "ID mancante", "Inserisci l'ID importazione di Home Assistant."
+            )
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            upload(self.ha_url.text().strip(), webhook, self.year or 0, self.collections)
+        except Exception as exc:  # noqa: BLE001 - convert transport errors into GUI feedback
+            QMessageBox.critical(self, "Invio non riuscito", str(exc))
+        else:
+            self.status.setText(
+                f"Importazione completata: Home Assistant ha ricevuto {len(self.collections)} raccolte."
+            )
+            QMessageBox.information(
+                self, "Importazione completata", "Home Assistant ha ricevuto il calendario."
+            )
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def export_json(self) -> None:
+        if not self.collections:
+            QMessageBox.information(self, "Nessun dato", "Completa prima l'analisi e la revisione.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Backup", f"raccolte-{self.year}.json", "JSON (*.json)"
+        )
+        if path:
+            write_backup(Path(path), self.year or 0, self.collections)
+            self.status.setText(f"Backup esportato in {path}.")
+
+    def open_settings(self) -> None:
+        dialog = SettingsDialog(self.settings, self)
+        dialog.changed.connect(self.apply_preferences)
+        dialog.exec()
+
+    def apply_preferences(self, theme: str) -> None:
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_theme(app, theme)
+        self.ha_url.setText(str(self.settings.value("homeassistant/url")))
+
+
+def main() -> int:
+    app = QApplication(sys.argv)
+    app.setOrganizationName("ManagerRifiuti")
+    app.setApplicationName("Manager Rifiuti")
+    settings = QSettings()
+    apply_theme(app, str(settings.value("appearance/theme", "Chiaro")))
+    window = MainWindow()
+    window.show()
+    return app.exec()
+
