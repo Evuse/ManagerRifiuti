@@ -17,4 +17,3 @@ CONF_NOTIFY_TIME = "notify_time"
 CONF_REMINDER_TIME = "reminder_time"
 CONF_ENABLED_WASTE = "enabled_waste"
 DEFAULT_NOTIFY_TIME = "20:00:00"
-
