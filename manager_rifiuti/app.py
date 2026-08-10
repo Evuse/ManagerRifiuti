@@ -10,10 +10,13 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -30,7 +33,7 @@ from PySide6.QtWidgets import (
 )
 
 from .homeassistant import upload
-from .models import Collection, WASTE_NAMES
+from .models import WASTE_NAMES, Collection
 from .recognizer import CalendarRecognizer, RecognitionResult
 
 
@@ -68,8 +71,19 @@ class ReviewDialog(QDialog):
             "Confermo di avere verificato manualmente i mesi non riconosciuti"
         )
         self.confirm_months.setVisible(self.months_need_confirmation)
+        waste_group = QGroupBox("Tipologie da importare")
+        waste_layout = QGridLayout(waste_group)
+        self.waste_checks: dict[str, QCheckBox] = {}
+        for index, (code, name) in enumerate(WASTE_NAMES.items()):
+            checkbox = QCheckBox(name)
+            checkbox.setChecked(True)
+            checkbox.toggled.connect(
+                lambda checked, selected_code=code: self.set_waste_enabled(selected_code, checked)
+            )
+            self.waste_checks[code] = checkbox
+            waste_layout.addWidget(checkbox, index // 2, index % 2)
         self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["Data (GG-MM)", "Tipo", "Confermato"])
+        self.table.setHorizontalHeaderLabels(["Data (GG-MM)", "Tipologia di rifiuto", "Includi"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         seen = set()
@@ -88,7 +102,12 @@ class ReviewDialog(QDialog):
         buttons.rejected.connect(self.reject)
         warning_text = "\n".join(w for r in results for w in r.warnings)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Controlla ogni riga. Doppio clic per modificare data o codice."))
+        layout.addWidget(
+            QLabel(
+                "Scegli le tipologie che ti interessano e controlla ogni raccolta. "
+                "Per impostazione predefinita sono incluse tutte."
+            )
+        )
         if warning_text:
             warning = QLabel(warning_text)
             warning.setStyleSheet("color: #9c4a00")
@@ -98,6 +117,7 @@ class ReviewDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(self.confirm)
         layout.addWidget(self.confirm_months)
+        layout.addWidget(waste_group)
         layout.addWidget(self.table)
         row = QHBoxLayout()
         row.addWidget(add)
@@ -110,10 +130,44 @@ class ReviewDialog(QDialog):
         row = self.table.rowCount()
         self.table.insertRow(row)
         self.table.setItem(row, 0, QTableWidgetItem(f"{day:02d}-{month:02d}"))
-        self.table.setItem(row, 1, QTableWidgetItem(waste))
+        waste_selector = QComboBox()
+        for code, name in WASTE_NAMES.items():
+            waste_selector.addItem(name, code)
+        selected_index = waste_selector.findData(waste)
+        waste_selector.setCurrentIndex(max(selected_index, 0))
+        waste_selector.currentIndexChanged.connect(
+            lambda _index, selector=waste_selector: self.sync_selector_enabled(selector)
+        )
+        self.table.setCellWidget(row, 1, waste_selector)
         checked = QTableWidgetItem("Sì")
-        checked.setCheckState(Qt.Checked)
+        checked.setFlags(checked.flags() | Qt.ItemIsUserCheckable)
+        waste_is_enabled = self.waste_checks[waste_selector.currentData()].isChecked()
+        checked.setCheckState(Qt.Checked if waste_is_enabled else Qt.Unchecked)
         self.table.setItem(row, 2, checked)
+
+    def row_waste(self, row: int) -> str:
+        selector = self.table.cellWidget(row, 1)
+        if not isinstance(selector, QComboBox):
+            raise TypeError(f"Tipologia non valida alla riga {row + 1}")
+        return str(selector.currentData())
+
+    def sync_row_enabled(self, row: int) -> None:
+        include = self.table.item(row, 2)
+        if include is not None:
+            include.setCheckState(
+                Qt.Checked if self.waste_checks[self.row_waste(row)].isChecked() else Qt.Unchecked
+            )
+
+    def sync_selector_enabled(self, selector: QComboBox) -> None:
+        for row in range(self.table.rowCount()):
+            if self.table.cellWidget(row, 1) is selector:
+                self.sync_row_enabled(row)
+                return
+
+    def set_waste_enabled(self, waste: str, enabled: bool) -> None:
+        for row in range(self.table.rowCount()):
+            if self.row_waste(row) == waste:
+                self.table.item(row, 2).setCheckState(Qt.Checked if enabled else Qt.Unchecked)
 
     def remove_rows(self) -> None:
         for index in sorted({i.row() for i in self.table.selectedIndexes()}, reverse=True):
@@ -138,12 +192,17 @@ class ReviewDialog(QDialog):
         self.accept()
 
     def collections(self) -> list[Collection]:
+        if not any(checkbox.isChecked() for checkbox in self.waste_checks.values()):
+            raise ValueError("Seleziona almeno una tipologia di rifiuto da importare.")
         values = []
         for row in range(self.table.rowCount()):
+            waste = self.row_waste(row)
+            if (
+                not self.waste_checks[waste].isChecked()
+                or self.table.item(row, 2).checkState() != Qt.Checked
+            ):
+                continue
             raw_date = self.table.item(row, 0).text().strip()
-            waste = self.table.item(row, 1).text().strip().upper()
-            if waste not in WASTE_NAMES:
-                raise ValueError(f"Codice non valido alla riga {row + 1}: {waste}")
             try:
                 day, month = (int(value) for value in raw_date.split("-"))
                 collection_day = date(self.year.value(), month, day)
@@ -280,3 +339,4 @@ def main() -> int:
     window = MainWindow()
     window.show()
     return app.exec()
+
