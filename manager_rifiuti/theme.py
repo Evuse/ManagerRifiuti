@@ -56,6 +56,9 @@ def apply_theme(app: QApplication, theme: str, accent: str = "Verde", font_size:
         f"""
         * {{ font-family: "Segoe UI", sans-serif; font-size: {font_size}px; }}
         QMainWindow, QDialog {{ background: {colors["bg"]}; color: {colors["text"]}; }}
+        QScrollArea#MainScroll, QScrollArea#MainScroll > QWidget > QWidget {{
+            background: {colors["bg"]}; border: none;
+        }}
         QWidget {{ color: {colors["text"]}; }}
         QMenuBar, QMenu {{ background: {colors["surface"]}; border: none; }}
         QMenuBar::item:selected, QMenu::item:selected {{ background: {colors["accent_soft"]}; }}
